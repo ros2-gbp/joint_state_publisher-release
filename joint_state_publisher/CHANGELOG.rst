@@ -2,8 +2,11 @@
 Changelog for package joint_state_publisher
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-2.1.0 (2020-05-19)
+2.0.1 (2020-05-27)
 ------------------
+* Remove the tests for the Dashing branch. (`#51 <https://github.com/ros/joint_state_publisher/issues/51>`_)
+* Fix joint_state_publisher to work on Dashing. (`#50 <https://github.com/ros/joint_state_publisher/issues/50>`_)
+* Contributors: Chris Lalancette
 
 2.0.0 (2020-03-10)
 ------------------
