@@ -1,6 +1,6 @@
 <package format="2">
   <name>joint_state_publisher</name>
-  <version>2.0.1</version>
+  <version>2.2.0</version>
   <description>
     This package contains a tool for setting and publishing joint state values for a given URDF.
   </description>
@@ -21,6 +21,8 @@
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_xmllint</test_depend>
   <test_depend>python3-pytest</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
