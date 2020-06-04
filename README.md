@@ -1,3 +1,28 @@
+## joint_state_publisher (foxy) - 2.2.0-1
+
+The packages in the `joint_state_publisher` repository were released into the `foxy` distro by running `/usr/bin/bloom-release --rosdistro foxy --track foxy joint_state_publisher` on `Thu, 04 Jun 2020 12:49:34 -0000`
+
+These packages were released:
+- `joint_state_publisher`
+- `joint_state_publisher_gui`
+
+Version of package(s) in repository `joint_state_publisher`:
+
+- upstream repository: https://github.com/ros/joint_state_publisher.git
+- release repository: unknown
+- rosdistro version: `null`
+- old version: `null`
+- new version: `2.2.0-1`
+
+Versions of tools used:
+
+- bloom version: `0.9.7`
+- catkin_pkg version: `0.4.20`
+- rosdep version: `0.19.0`
+- rosdistro version: `0.8.2`
+- vcstools version: `0.1.42`
+
+
 ## joint_state_publisher (dashing) - 2.0.1-1
 
 The packages in the `joint_state_publisher` repository were released into the `dashing` distro by running `/usr/bin/bloom-release --track dashing --rosdistro dashing joint_state_publisher` on `Wed, 27 May 2020 18:51:06 -0000`
