@@ -174,5 +174,4 @@ tracks:
     ros_distro: rolling
     vcs_type: git
     vcs_uri: https://github.com/ros/joint_state_publisher.git
-    version: 2.4.0
-    version_saved: :{auto}
+    version: :{auto}
