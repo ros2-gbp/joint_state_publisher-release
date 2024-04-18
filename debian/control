@@ -1,0 +1,12 @@
+Source: ros-jazzy-joint-state-publisher
+Section: misc
+Priority: optional
+Maintainer: Chris Lalancette <clalancette@osrfoundation.org>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest <!nocheck>, ros-jazzy-ament-copyright <!nocheck>, ros-jazzy-ament-xmllint <!nocheck>, ros-jazzy-launch-testing <!nocheck>, ros-jazzy-launch-testing-ros <!nocheck>, ros-jazzy-ros2topic <!nocheck>, ros-jazzy-ros-workspace, python3-all, python3-setuptools, dh-python
+Homepage: http://www.ros.org/wiki/joint_state_publisher
+Standards-Version: 3.9.2
+
+Package: ros-jazzy-joint-state-publisher
+Architecture: any
+Depends: ${python3:Depends}, ${misc:Depends}, ros-jazzy-rclpy, ros-jazzy-sensor-msgs, ros-jazzy-std-msgs, ros-jazzy-ros-workspace
+Description: This package contains a tool for setting and publishing joint state values for a given URDF.
