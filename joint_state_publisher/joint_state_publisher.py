@@ -1,51 +1,59 @@
 # Copyright (c) 2010, Willow Garage, Inc.
 # All rights reserved.
 #
-# Software License Agreement (BSD License 2.0)
-#
 # Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
+# modification, are permitted provided that the following conditions are met:
 #
-#  * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#  * Redistributions in binary form must reproduce the above
-#    copyright notice, this list of conditions and the following
-#    disclaimer in the documentation and/or other materials provided
-#    with the distribution.
-#  * Neither the name of Willow Garage, Inc. nor the names of its
-#    contributors may be used to endorse or promote products derived
-#    from this software without specific prior written permission.
+#    * Redistributions of source code must retain the above copyright
+#      notice, this list of conditions and the following disclaimer.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-# COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+#    * Redistributions in binary form must reproduce the above copyright
+#      notice, this list of conditions and the following disclaimer in the
+#      documentation and/or other materials provided with the distribution.
+#
+#    * Neither the name of the copyright holder nor the names of its
+#      contributors may be used to endorse or promote products derived from
+#      this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
 # Standard Python imports
 import argparse
 import math
 import sys
-import time
 import xml.dom.minidom
 
+# Third-party imports
+import packaging.version
+
 # ROS 2 imports
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 import rclpy
 import rclpy.node
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 import sensor_msgs.msg
 import std_msgs.msg
 
 
+def _convert_to_float(name, jtype, limit_name, input_string):
+    try:
+        return float(input_string)
+    except ValueError as e:
+        raise Exception(
+            f'"{limit_name}" limit must be a float for joint "{name}" of type "{jtype}"') from e
+
+
 class JointStatePublisher(rclpy.node.Node):
+
     def get_param(self, name):
         return self.get_parameter(name).value
 
@@ -59,10 +67,17 @@ class JointStatePublisher(rclpy.node.Node):
             joint['effort'] = 0.0
         return joint
 
-    def init_sdf(self, robot):
-        robot = robot.getElementsByTagName('model')[0]
+    def init_sdf(self, xmldom):
+        free_joints = {}
+        joint_list = []
+        dependent_joints = {}
+
+        model_list = xmldom.getElementsByTagName('model')
+        if not model_list:
+            raise Exception('SDF must have a "model" tag')
+        model = model_list[0]
         # Find all non-fixed joints
-        for child in robot.childNodes:
+        for child in model.childNodes:
             if child.nodeType is child.TEXT_NODE:
                 continue
             if child.localName != 'joint':
@@ -77,16 +92,26 @@ class JointStatePublisher(rclpy.node.Node):
                 minval = -math.pi
                 maxval = math.pi
             else:
-                try:
-                    limit = child.getElementsByTagName('limit')[0]
-                    minval = float(limit.getElementsByTagName('lower')[0].firstChild.data)
-                    maxval = float(limit.getElementsByTagName('upper')[0].firstChild.data)
-                except ValueError:
-                    self.get_logger().warn('%s limits are not valid!' % name)
-                    continue
-                except:
-                    self.get_logger().warn('%s is not fixed, nor continuous, but limits are not specified!' % name)
-                    continue
+                # Limits are required, and required to be floats.
+                limit_list = child.getElementsByTagName('limit')
+                if not limit_list:
+                    raise Exception(
+                        f'Limits must be specified for joint "{name}" of type "{jtype}"')
+                limit = limit_list[0]
+
+                lower_list = limit.getElementsByTagName('lower')
+                if not lower_list:
+                    raise Exception(
+                        f'"lower" limit must be specified for joint "{name}" of type "{jtype}"')
+                lower = lower_list[0]
+                minval = _convert_to_float(name, jtype, 'lower', lower.firstChild.data)
+
+                upper_list = limit.getElementsByTagName('upper')
+                if not upper_list:
+                    raise Exception(
+                        f'"upper" limit must be specified for joint "{name}" of type "{jtype}"')
+                upper = upper_list[0]
+                maxval = _convert_to_float(name, jtype, 'upper', upper.firstChild.data)
 
             if self.zeros and name in self.zeros:
                 zeroval = self.zeros[name]
@@ -99,36 +124,85 @@ class JointStatePublisher(rclpy.node.Node):
 
             if jtype == 'continuous':
                 joint['continuous'] = True
-            self.free_joints[name] = joint
-            self.joint_list.append(name)
+            free_joints[name] = joint
+            joint_list.append(name)
 
-    def init_collada(self, robot):
-        robot = robot.getElementsByTagName('kinematics_model')[0].getElementsByTagName('technique_common')[0]
-        for child in robot.childNodes:
+        return (free_joints, joint_list, dependent_joints)
+
+    def init_collada(self, xmldom):
+        free_joints = {}
+        joint_list = []
+        dependent_joints = {}
+
+        colladadom = xmldom.childNodes[0]
+
+        if not colladadom.hasAttribute('version'):
+            raise Exception('COLLADA must have a version tag')
+
+        colladaversion = packaging.version.parse(colladadom.attributes['version'].value)
+        if colladaversion < packaging.version.parse('1.5.0'):
+            raise Exception('COLLADA must be at least version 1.5.0')
+
+        kinematics_model_list = xmldom.getElementsByTagName('kinematics_model')
+        if not kinematics_model_list:
+            raise Exception('COLLADA must have a "kinematics_model" tag')
+        kinematics_model = kinematics_model_list[0]
+        technique_common_list = kinematics_model.getElementsByTagName('technique_common')
+        if not technique_common_list:
+            raise Exception('COLLADA must have a "technique_common" tag')
+        technique_common = technique_common_list[0]
+
+        for child in technique_common.childNodes:
             if child.nodeType is child.TEXT_NODE:
                 continue
-            if child.localName == 'joint':
-                name = child.getAttribute('name')
-                if child.getElementsByTagName('revolute'):
-                    joint = child.getElementsByTagName('revolute')[0]
-                else:
-                    self.get_logger().warn('Unknown joint type %s', child)
-                    continue
+            if child.localName != 'joint':
+                continue
 
-                if joint:
-                    limit = joint.getElementsByTagName('limits')[0]
-                    minval = float(limit.getElementsByTagName('min')[0].childNodes[0].nodeValue)
-                    maxval = float(limit.getElementsByTagName('max')[0].childNodes[0].nodeValue)
-                if minval == maxval:  # this is a fixed joint
-                    continue
+            name = child.getAttribute('name')
+            revolute_list = child.getElementsByTagName('revolute')
+            if not revolute_list:
+                continue
+            revolute = revolute_list[0]
 
-                self.joint_list.append(name)
-                minval *= math.pi/180.0
-                maxval *= math.pi/180.0
-                self.free_joints[name] = self._init_joint(minval, maxval, 0.0)
+            limit_list = revolute.getElementsByTagName('limits')
+            if not limit_list:
+                raise Exception(f'Limits must be specified for joint "{name}" of type "revolute"')
 
-    def init_urdf(self, robot):
-        robot = robot.getElementsByTagName('robot')[0]
+            limit = limit_list[0]
+
+            min_list = limit.getElementsByTagName('min')
+            if not min_list:
+                raise Exception(
+                    f'"min" limit must be specified for joint "{name}" of type "revolute"')
+            minval = _convert_to_float(name, 'revolute', 'min',
+                                       min_list[0].childNodes[0].nodeValue)
+
+            max_list = limit.getElementsByTagName('max')
+            if not max_list:
+                raise Exception(
+                    f'"max" limit must be specified for joint "{name}" of type "revolute"')
+            maxval = _convert_to_float(name, 'revolute', 'max',
+                                       max_list[0].childNodes[0].nodeValue)
+
+            if minval == maxval:  # this is a fixed joint
+                continue
+
+            joint_list.append(name)
+            minval *= math.pi/180.0
+            maxval *= math.pi/180.0
+            free_joints[name] = self._init_joint(minval, maxval, 0.0)
+
+        return (free_joints, joint_list, dependent_joints)
+
+    def init_urdf(self, xmldom):
+        free_joints = {}
+        joint_list = []
+        dependent_joints = {}
+
+        robot_list = xmldom.getElementsByTagName('robot')
+        if not robot_list:
+            raise Exception('URDF must have a "robot" tag')
+        robot = robot_list[0]
         # Find all non-fixed joints
         for child in robot.childNodes:
             if child.nodeType is child.TEXT_NODE:
@@ -143,13 +217,23 @@ class JointStatePublisher(rclpy.node.Node):
                 minval = -math.pi
                 maxval = math.pi
             else:
-                try:
-                    limit = child.getElementsByTagName('limit')[0]
-                    minval = float(limit.getAttribute('lower'))
-                    maxval = float(limit.getAttribute('upper'))
-                except:
-                    self.get_logger().warn('%s is not fixed, nor continuous, but limits are not specified!' % name)
-                    continue
+                # Limits are required, and required to be floats.
+                limit_list = child.getElementsByTagName('limit')
+                if not limit_list:
+                    raise Exception(
+                        f'Limits must be specified for joint "{name}" of type "{jtype}"')
+
+                limit = limit_list[0]
+
+                if not limit.hasAttribute('lower'):
+                    raise Exception(
+                        f'"lower" limit must be specified for joint "{name}" of type "{jtype}"')
+                minval = _convert_to_float(name, jtype, 'lower', limit.getAttribute('lower'))
+
+                if not limit.hasAttribute('upper'):
+                    raise Exception(
+                        f'"upper" limit must be specified for joint "{name}" of type "{jtype}"')
+                maxval = _convert_to_float(name, jtype, 'upper', limit.getAttribute('upper'))
 
             safety_tags = child.getElementsByTagName('safety_controller')
             if self.use_small and len(safety_tags) == 1:
@@ -159,7 +243,7 @@ class JointStatePublisher(rclpy.node.Node):
                 if tag.hasAttribute('soft_upper_limit'):
                     maxval = min(maxval, float(tag.getAttribute('soft_upper_limit')))
 
-            self.joint_list.append(name)
+            joint_list.append(name)
 
             mimic_tags = child.getElementsByTagName('mimic')
             if self.use_mimic and len(mimic_tags) == 1:
@@ -170,10 +254,10 @@ class JointStatePublisher(rclpy.node.Node):
                 if tag.hasAttribute('offset'):
                     entry['offset'] = float(tag.getAttribute('offset'))
 
-                self.dependent_joints[name] = entry
+                dependent_joints[name] = entry
                 continue
 
-            if name in self.dependent_joints:
+            if name in dependent_joints:
                 continue
 
             if self.zeros and name in self.zeros:
@@ -187,33 +271,25 @@ class JointStatePublisher(rclpy.node.Node):
 
             if jtype == 'continuous':
                 joint['continuous'] = True
-            self.free_joints[name] = joint
+            free_joints[name] = joint
+
+        return (free_joints, joint_list, dependent_joints)
 
     def configure_robot(self, description):
-        self.get_logger().debug('Got description, configuring robot')
-        try:
-            robot = xml.dom.minidom.parseString(description)
-        except xml.parsers.expat.ExpatError:
-            # If the description fails to parse for some reason, print an error
-            # and get out of here without doing further work.  If we were
-            # already running with a description, we'll continue running with
-            # that older one.
-            self.get_logger().warn('Invalid robot_description given, ignoring')
-            return
+        self.get_logger().info('Got description, configuring robot')
+        xmldom = xml.dom.minidom.parseString(description)
 
-        # Make sure to clear out the old joints so we don't get duplicate joints
-        # on a new robot description.
-        self.free_joints = {}
-        self.joint_list = [] # for maintaining the original order of the joints
-
-        # Get root tag to parse file format
-        root = robot.documentElement
+        root = xmldom.documentElement
         if root.tagName == 'sdf':
-            self.init_sdf(robot)
+            (free_joints, joint_list, dependent_joints) = self.init_sdf(xmldom)
         elif root.tagName == 'COLLADA':
-            self.init_collada(robot)
+            (free_joints, joint_list, dependent_joints) = self.init_collada(xmldom)
         else:
-            self.init_urdf(robot)
+            (free_joints, joint_list, dependent_joints) = self.init_urdf(xmldom)
+
+        self.free_joints = free_joints
+        self.joint_list = joint_list  # for maintaining the original order of the joints
+        self.dependent_joints = dependent_joints
 
         if self.robot_description_update_cb is not None:
             self.robot_description_update_cb()
@@ -227,6 +303,7 @@ class JointStatePublisher(rclpy.node.Node):
         # a map of name -> dict['parent': parent, factor: factor, offset: offset],
         # where both factor and offset are optional.  Thus we parse the values we
         # got into that structure.
+        allowed_joint_names = ('parent', 'factor', 'offset')
         for name, param in dependent_joints.items():
             # First split on the dots; there should be one and exactly one dot
             split = name.split('.')
@@ -234,15 +311,17 @@ class JointStatePublisher(rclpy.node.Node):
                 raise Exception("Invalid dependent_joint name '%s'" % (name))
             newkey = split[0]
             newvalue = split[1]
-            if newvalue not in ['parent', 'factor', 'offset']:
-                raise Exception("Invalid dependent_joint name '%s' (allowed values are 'parent', 'factor', and 'offset')" % (newvalue))
+            if newvalue not in allowed_joint_names:
+                allowed_joint_string = ', '.join(f"'{w}'" for w in allowed_joint_names)
+                raise Exception("Invalid dependent_joint name '%s' "
+                                '(allowed values are %s)' % (newvalue, allowed_joint_string))
             if newkey in dj:
                 dj[newkey].update({newvalue: param.value})
             else:
                 dj[newkey] = {newvalue: param.value}
 
         # Now ensure that there is at least a 'parent' in all keys
-        for name,outdict in dj.items():
+        for name, outdict in dj.items():
             if outdict.get('parent', None) is None:
                 raise Exception('All dependent_joints must at least have a parent')
 
@@ -262,24 +341,39 @@ class JointStatePublisher(rclpy.node.Node):
         except rclpy.exceptions.ParameterAlreadyDeclaredException:
             pass
 
-    def __init__(self, description_file):
-        super().__init__('joint_state_publisher', automatically_declare_parameters_from_overrides=True)
+    def robot_description_cb(self, msg):
+        try:
+            self.configure_robot(msg.data)
+        except Exception as e:
+            self.get_logger().warn(str(e))
 
-        self.declare_ros_parameter('publish_default_efforts', False, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.declare_ros_parameter('publish_default_positions', True, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.declare_ros_parameter('publish_default_velocities', False, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.declare_ros_parameter('rate', 10, ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
-        self.declare_ros_parameter('source_list', [], ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY))
-        self.declare_ros_parameter('use_mimic_tags', True, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.declare_ros_parameter('use_smallest_joint_limits', True, ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
-        self.declare_ros_parameter('delta', 0.0, ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
+    def __init__(self, description_file):
+        super().__init__('joint_state_publisher',
+                         automatically_declare_parameters_from_overrides=True)
+
+        self.declare_ros_parameter('publish_default_efforts', False,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        self.declare_ros_parameter('publish_default_positions', True,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        self.declare_ros_parameter('publish_default_velocities', False,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        self.declare_ros_parameter('rate', 10,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_INTEGER))
+        self.declare_ros_parameter('source_list', [],
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY))
+        self.declare_ros_parameter('use_mimic_tags', True,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        self.declare_ros_parameter('use_smallest_joint_limits', True,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_BOOL))
+        self.declare_ros_parameter('delta', 0.0,
+                                   ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE))
         # In theory we would also declare 'dependent_joints' and 'zeros' here.
         # Since rclpy doesn't support maps natively, though, we just end up
         # letting 'automatically_declare_parameters_from_overrides' declare
         # any parameters for us.
 
         self.free_joints = {}
-        self.joint_list = [] # for maintaining the original order of the joints
+        self.joint_list = []  # for maintaining the original order of the joints
         self.dependent_joints = self.parse_dependent_joints()
         self.use_mimic = self.get_param('use_mimic_tags')
         self.use_small = self.get_param('use_smallest_joint_limits')
@@ -288,7 +382,7 @@ class JointStatePublisher(rclpy.node.Node):
         # get_parameters_by_prefix() returns a map of name -> Parameter
         # structures, but self.zeros is expected to be a list of name -> float;
         # fix that here.
-        self.zeros = {k:v.value for (k, v) in zeros.items()}
+        self.zeros = {k: v.value for (k, v) in zeros.items()}
 
         self.pub_def_positions = self.get_param('publish_default_positions')
         self.pub_def_vels = self.get_param('publish_default_velocities')
@@ -296,26 +390,32 @@ class JointStatePublisher(rclpy.node.Node):
 
         self.robot_description_update_cb = None
 
-
         if description_file is not None:
             # If we were given a URDF file on the command-line, use that.
             with open(description_file, 'r') as infp:
                 description = infp.read()
             self.configure_robot(description)
         else:
-            # Otherwise, subscribe to the '/robot_description' topic and wait
-            # for a callback there
-            self.get_logger().info('Waiting for robot_description to be published on the robot_description topic...')
-            self.create_subscription(std_msgs.msg.String, 'robot_description',
-                                     lambda msg: self.configure_robot(msg.data),
-                                     rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL))
+            self.get_logger().info(
+                'Waiting for robot_description to be published on the robot_description topic...')
+
+        # In all cases, subscribe to the '/robot_description' topic; this allows us to get our
+        # initial configuration in the case we weren't given it on the command-line, and allows
+        # us to dynamically update later.
+        qos = rclpy.qos.QoSProfile(depth=1,
+                                   durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(std_msgs.msg.String,
+                                 'robot_description',
+                                 lambda msg: self.robot_description_cb(msg),
+                                 qos)
 
         self.delta = self.get_param('delta')
 
         source_list = self.get_param('source_list')
         self.sources = []
         for source in source_list:
-            self.sources.append(self.create_subscription(sensor_msgs.msg.JointState, source, self.source_cb, 10))
+            self.sources.append(self.create_subscription(sensor_msgs.msg.JointState, source,
+                                                         self.source_cb, 10))
 
         # The source_update_cb will be called at the end of self.source_cb.
         # The main purpose is to allow external observers (such as the
@@ -410,7 +510,8 @@ class JointStatePublisher(rclpy.node.Node):
                 while parent in self.dependent_joints:
                     if parent in recursive_mimic_chain_joints:
                         error_message = 'Found an infinite recursive mimic chain'
-                        self.get_logger().error(f'{error_message}: {recursive_mimic_chain_joints + [parent]}')
+                        self.get_logger().error(
+                            f'{error_message}: {recursive_mimic_chain_joints + [parent]}')
                         sys.exit(1)
                     recursive_mimic_chain_joints.append(parent)
                     param = self.dependent_joints[parent]
@@ -455,7 +556,8 @@ def main():
     # Strip off the ROS 2-specific command-line arguments
     stripped_args = rclpy.utilities.remove_ros_args(args=sys.argv)
     parser = argparse.ArgumentParser()
-    parser.add_argument('description_file', help='Robot description file to use', nargs='?', default=None)
+    parser.add_argument(
+        'description_file', help='Robot description file to use', nargs='?', default=None)
 
     # Parse the remaining arguments, noting that the passed-in args must *not*
     # contain the name of the program.
