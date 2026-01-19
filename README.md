@@ -1,3 +1,28 @@
+## joint_state_publisher (rolling) - 2.4.1-1
+
+The packages in the `joint_state_publisher` repository were released into the `rolling` distro by running `/usr/bin/bloom-release --rosdistro rolling --track rolling joint_state_publisher` on `Mon, 19 Jan 2026 15:18:21 -0000`
+
+These packages were released:
+- `joint_state_publisher`
+- `joint_state_publisher_gui`
+
+Version of package(s) in repository `joint_state_publisher`:
+
+- upstream repository: https://github.com/ros/joint_state_publisher.git
+- release repository: https://github.com/ros2-gbp/joint_state_publisher-release.git
+- rosdistro version: `2.4.0-2`
+- old version: `2.4.0-2`
+- new version: `2.4.1-1`
+
+Versions of tools used:
+
+- bloom version: `0.13.0`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## joint_state_publisher (humble) - 2.4.0-1
 
 The packages in the `joint_state_publisher` repository were released into the `humble` distro by running `/usr/bin/bloom-release --track humble --rosdistro humble joint_state_publisher` on `Fri, 04 Aug 2023 20:23:49 -0000`
