@@ -1,1 +1,1 @@
-{"base": "1326f68db7c2", "parent": "release/rolling/joint_state_publisher/2.4.1-2", "previous": "d4506fe7d585", "trim": "", "trimbase": ""}
+{"base": "c9f472f", "parent": "release/rolling/joint_state_publisher", "previous": "c988f99", "trim": "", "trimbase": ""}
