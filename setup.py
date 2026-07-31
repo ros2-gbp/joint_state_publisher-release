@@ -5,7 +5,7 @@ package_name = 'joint_state_publisher_gui'
 
 setup(
     name=package_name,
-    version='2.4.1',
+    version='2.4.3',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -21,8 +21,7 @@ setup(
     keywords=['ROS'],
     classifiers=[
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: BSD',
-        'Programming Language :: Python',
+        'Programming Language :: Python :: 3',
         'Topic :: Software Development',
     ],
     description=(
@@ -30,7 +29,11 @@ setup(
         'robot described with URDF.'
     ),
     license='BSD',
-    tests_require=['pytest'],
+    extras_require={
+        'test': [
+            'pytest',
+        ],
+    },
     entry_points={
         'console_scripts': [
             'joint_state_publisher_gui = joint_state_publisher_gui.joint_state_publisher_gui:main',
