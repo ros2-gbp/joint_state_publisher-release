@@ -1,3 +1,28 @@
+## joint_state_publisher (kilted) - 2.4.3-1
+
+The packages in the `joint_state_publisher` repository were released into the `kilted` distro by running `/usr/bin/bloom-release --rosdistro kilted --track kilted joint_state_publisher` on `Fri, 31 Jul 2026 14:13:14 -0000`
+
+These packages were released:
+- `joint_state_publisher`
+- `joint_state_publisher_gui`
+
+Version of package(s) in repository `joint_state_publisher`:
+
+- upstream repository: https://github.com/ros/joint_state_publisher.git
+- release repository: https://github.com/ros2-gbp/joint_state_publisher-release.git
+- rosdistro version: `2.4.1-1`
+- old version: `2.4.1-1`
+- new version: `2.4.3-1`
+
+Versions of tools used:
+
+- bloom version: `0.14.3`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## joint_state_publisher (lyrical) - 2.4.3-1
 
 The packages in the `joint_state_publisher` repository were released into the `lyrical` distro by running `/usr/bin/bloom-release --rosdistro lyrical --track lyrical joint_state_publisher` on `Fri, 31 Jul 2026 14:10:38 -0000`
